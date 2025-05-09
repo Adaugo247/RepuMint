@@ -1,5 +1,5 @@
-;; Digital Asset Marketplace - Stage 2
-;; Enhanced implementation with quality tiers, royalty rates, and asset management
+;; Digital Asset Marketplace - Stage 3
+;; Complete implementation with creator reputation and consumer purchase history
 
 ;; Define constants
 (define-constant ERR-UNAUTHORIZED (err u100))
@@ -37,6 +37,13 @@
 
 (define-map credit-balances principal uint)
 
+(define-map creator-reputation principal uint)
+
+(define-map consumer-purchase-history
+  principal
+  (list 10 uint)
+)
+
 ;; Define data variable for asset counter
 (define-data-var asset-counter uint u0)
 
@@ -70,6 +77,16 @@
       }
     )
     
+    ;; Update creator's asset publication history
+    (let 
+      (
+        (current-log (default-to (list) (map-get? consumer-purchase-history tx-sender)))
+        (updated-log (unwrap-panic (as-max-len? (concat (list asset-id) current-log) u10)))
+      )
+      ;; Keep track of last 10 assets
+      (map-set consumer-purchase-history tx-sender updated-log)
+    )
+    
     (var-set asset-counter asset-id)
     (ok asset-id)
   )
@@ -95,6 +112,17 @@
     )
     (map-set credit-balances tx-sender (- buyer-balance (get filesize asset-data)))
     (map-set credit-balances (get creator asset-data) (+ (default-to u0 (map-get? credit-balances (get creator asset-data))) (get filesize asset-data)))
+    
+    ;; Update consumer's purchase history
+    (let 
+      (
+        (current-log (default-to (list) (map-get? consumer-purchase-history tx-sender)))
+        (updated-log (unwrap-panic (as-max-len? (concat (list asset-id) current-log) u10)))
+      )
+      ;; Keep track of last 10 assets
+      (map-set consumer-purchase-history tx-sender updated-log)
+    )
+    
     (ok true)
   )
 )
@@ -121,6 +149,15 @@
     (map-set credit-balances (get creator asset-data) 
       (+ (default-to u0 (map-get? credit-balances (get creator asset-data))) 
          total-fee)
+    )
+    
+    ;; Update creator reputation
+    (let ((current-score (default-to u0 (map-get? creator-reputation 
+                          (get creator asset-data)))))
+      (map-set creator-reputation
+        (get creator asset-data)
+        (+ current-score u1)
+      )
     )
     
     ;; Mark asset as fully transferred
@@ -165,6 +202,14 @@
 
 (define-read-only (check-credit-balance (user principal))
   (default-to u0 (map-get? credit-balances user))
+)
+
+(define-read-only (get-creator-rating (creator principal))
+  (default-to u0 (map-get? creator-reputation creator))
+)
+
+(define-read-only (view-consumer-assets (consumer principal))
+  (default-to (list) (map-get? consumer-purchase-history consumer))
 )
 
 ;; Calculate quality multiplier
